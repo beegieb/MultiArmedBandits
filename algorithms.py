@@ -192,3 +192,10 @@ class AnnealedDirichletBandit(AnnealedBaseBandit):
         return argmax(random.multinomial(1, pvals=pvals))
 
 
+class UpperConfidenceBoundBandit(BaseBandit):
+    def draw(self):
+        succ = array(self.success)
+        fail = array(self.draws) - succ
+        beta = stats.beta(succ + 1, fail + 1)
+
+        return argmax(beta.interval(0.95)[1])
