@@ -43,11 +43,11 @@ class BaseBandit(object):
 
     @property
     def expected_success(self):
-        return [s/d for s, d in zip(self.success, self.draws)]
+        return [s/d if d > 0 else 0 for s, d in zip(self.success, self.draws)]
 
     @property
     def expected_payouts(self):
-        return [p/d for p, d in zip(self.payouts, self.draws)]
+        return [p/d if d > 0 else 0 for p, d in zip(self.payouts, self.draws)]
 
     def update(self, selected_arm, reward):
         self.draws[selected_arm] += 1
