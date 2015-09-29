@@ -1,5 +1,5 @@
-from scipy import random, array, argmax
-
+from scipy import random, array, argmax, cumsum, log
+from datetime import datetime
 
 class BernoulliArm(object):
     def __init__(self, p=0.5, payout=1.):
@@ -94,7 +94,11 @@ class BanditMonteCarloSimulation(object):
         if self.verbose:
             print 'Starting Simulation %i - Best Arm is %i' % (self._simulation_counter, best_arm)
 
-        return [self._run_one_round(bandit_alg) for _ in range(self.n_rounds)], best_arm
+        start_time = datetime.now()
+        results = [self._run_one_round(bandit_alg) for _ in range(self.n_rounds)]
+        end_time = datetime.now()
+
+        return results, best_arm, (end_time - start_time).seconds
 
     def simulate(self, bandit_alg):
         self.results_ = [self._run_one_sim(bandit_alg) for _ in range(self.n_sim)]
@@ -107,6 +111,32 @@ class BanditMonteCarloSimulation(object):
 
         return self
 
+    def summary(self):
+        if not hasattr(self, 'results_'):
+            raise RuntimeError('Simulation has not been run yet. Use the simulate method prior to calling save_results')
+
+        runs = array([run for run, _, _ in self.results_])
+        best_arms = [best_arm for _, best_arm, _ in self.results_]
+        runtimes = array([runtime for _, _, runtime in self.results_])
+
+        cumulative_rewards = cumsum(runs[:, :, 1], 1)
+        best_arm_accuracy = array([r[:, 0] == a for r, a in zip(runs, best_arms)])
+
+        return {'Runtime': {'Avg': runtimes.mean(), 'Std': runtimes.std(), 'Total': runtimes.sum()},
+                'Accuracy': {'Avg': best_arm_accuracy.mean(0)},
+                'CumulativeRewards': {'Avg': cumulative_rewards.mean(0), 'Std': cumulative_rewards.std(0)}}
+
+    def print_summary(self):
+        summary = self.summary()
+        n = len(summary['Accuracy']['Avg'])
+        discount_weights = log(array(range(n)) + 1) + 1
+        discount_weights /= sum(discount_weights)
+        print 'Final Average Accuracy: %f' % summary['Accuracy']['Avg'][-1]
+        print 'Discounted Average Accuracy: %f' % summary['Accuracy']['Avg'].dot(discount_weights)
+        print 'Average Total Reward: %f - Std: %f' % (summary['CumulativeRewards']['Avg'][-1],
+                                                      summary['CumulativeRewards']['Std'][-1])
+        print 'Average Runtime: %f - Total Runtime: %f' % (summary['Runtime']['Avg'], summary['Runtime']['Total'])
+
     def save_results(self, outfile):
         if not hasattr(self, 'results_'):
             raise RuntimeError('Simulation has not been run yet. Use the simulate method prior to calling save_results')
@@ -116,6 +146,6 @@ class BanditMonteCarloSimulation(object):
 
         with open(outfile, 'w') as output:
             output.write('Simulation_ID,Round,Arm,Payout,Best_Arm\n')
-            for i, (sim_round, best_arm) in enumerate(self.results_):
+            for i, (sim_round, best_arm, runtime) in enumerate(self.results_):
                 for j, (arm, payout) in enumerate(sim_round):
                     output.write('%i,%i,%i,%f,%i\n' % (i+1, j+1, arm, payout, best_arm))
