@@ -61,3 +61,6 @@ venv/
 
 # PyCharm stuff
 .idea/
+
+# simulation results
+simulation_results/
