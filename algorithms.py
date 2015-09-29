@@ -58,6 +58,14 @@ class BaseBandit(object):
         raise NotImplementedError('This is a baseclass, inherit this class and implement a "draw" method')
 
 
+def linear_schedule(t):
+    return t + TINY
+
+
+def logarithmic_schedule(t):
+    return log(t + 1 + TINY)
+
+
 class AnnealedBaseBandit(BaseBandit):
     def __init__(self, schedule='linear', **kwargs):
         self.schedule = schedule
@@ -96,21 +104,14 @@ class EpsilonGreedyBandit(BaseBandit):
             return argmax(self.expected_payouts)
 
 
-def linear_schedule(t):
-    return t + TINY
-
-
-def logarithmic_schedule(t):
-    return log(t + 1 + TINY)
-
-
 class AnnealedEpsilonGreedyBandit(AnnealedBaseBandit):
     def __init__(self, epsilon=1.0, **kwargs):
         self.epsilon = epsilon
         super(AnnealedEpsilonGreedyBandit, self).__init__(**kwargs)
 
     def draw(self):
-        if random.rand() < self.epsilon / self._schedule_fn(self.total_draws):
+        temp = 1 / self._schedule_fn(self.total_draws)
+        if random.rand() < self.epsilon * temp:
             return random.choice(self.n_arms)
         else:
             return argmax(self.expected_payouts)
@@ -128,7 +129,7 @@ class SoftmaxBandit(BaseBandit):
 
 class AnnealedSoftmaxBandit(AnnealedBaseBandit):
     def draw(self):
-        temp = self._schedule_fn(self.total_draws)
+        temp = 1 / self._schedule_fn(self.total_draws)
         return argmax(random.multinomial(1, pvals=softmax(array(self.expected_payouts) / temp)))
 
 
@@ -140,22 +141,6 @@ class DirichletBandit(BaseBandit):
     def draw(self):
         x = array(self.expected_payouts) + 1
 
-        if self.random_sample:
-            pvals = random.dirichlet(x)
-        else:
-            pvals = x / sum(x)
-
-        return argmax(random.multinomial(1, pvals=pvals))
-
-
-class AnnealedDirichletBandit(AnnealedBaseBandit):
-    def __init__(self, random_sample=True, **kwargs):
-        self.random_sample = random_sample
-        super(AnnealedDirichletBandit, self).__init__(**kwargs)
-
-    def draw(self):
-        temp = self._schedule_fn(self.total_draws)
-        x = (array(self.expected_payouts) + 1) / temp
         if self.random_sample:
             pvals = random.dirichlet(x)
         else:
