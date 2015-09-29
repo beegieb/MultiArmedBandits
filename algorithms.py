@@ -1,7 +1,6 @@
 from __future__ import division
 from scipy import random, exp, log, argmax, array, stats
 
-
 TINY = 1e-6
 
 
@@ -160,42 +159,63 @@ class AnnealedSoftmaxBandit(AnnealedBaseBandit):
 
 
 class DirichletBandit(BaseBandit):
-    def __init__(self, random_sample=True, **kwargs):
+    def __init__(self, random_sample=True, sample_priors=True, **kwargs):
         self.random_sample = random_sample
+        self.sample_priors = sample_priors
         super(DirichletBandit, self).__init__(**kwargs)
 
     def draw(self):
         x = array(self._metric_fn()) + 1
 
-        if self.random_sample:
+        if self.sample_priors:
             pvals = random.dirichlet(x)
         else:
             pvals = x / sum(x)
 
-        return argmax(random.multinomial(1, pvals=pvals))
+        if self.random_sample:
+            return argmax(random.multinomial(1, pvals=pvals))
+        else:
+            return argmax(pvals)
 
 
 class AnnealedDirichletBandit(AnnealedBaseBandit):
-    def __init__(self, random_sample=True, **kwargs):
+    def __init__(self, random_sample=True, sample_priors=True, **kwargs):
         self.random_sample = random_sample
+        self.sample_priors = sample_priors
         super(AnnealedDirichletBandit, self).__init__(**kwargs)
 
     def draw(self):
         temp = 1 / self._schedule_fn(self.total_draws)
         x = array(self._metric_fn()) / temp + 1
 
-        if self.random_sample:
+        if self.sample_priors:
             pvals = random.dirichlet(x)
         else:
             pvals = x / sum(x)
 
-        return argmax(random.multinomial(1, pvals=pvals))
+        if self.random_sample:
+            return argmax(random.multinomial(1, pvals=pvals))
+        else:
+            return argmax(pvals)
 
 
-class UpperConfidenceBoundBandit(BaseBandit):
+class UCBBetaBandit(BaseBandit):
+    def __init__(self, conf=0.95, **kwargs):
+        self.conf = conf
+        super(UCBBetaBandit, self).__init__(**kwargs)
+
     def draw(self):
         succ = array(self.success)
         fail = array(self.draws) - succ
         beta = stats.beta(succ + 1, fail + 1)
 
-        return argmax(beta.interval(0.95)[1])
+        return argmax(beta.interval(self.conf)[1])
+
+
+class RandomBetaBandit(BaseBandit):
+    def draw(self):
+        succ = array(self.success)
+        fail = array(self.draws) - succ
+        rvs = random.beta(succ + 1, fail + 1)
+
+        return argmax(rvs)
