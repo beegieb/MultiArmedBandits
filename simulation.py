@@ -1,6 +1,7 @@
 from scipy import random, array, argmax, cumsum, log
 from datetime import datetime
 
+
 class BernoulliArm(object):
     def __init__(self, p=0.5, payout=1.):
         self._p = None
