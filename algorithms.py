@@ -1,5 +1,5 @@
 from __future__ import division
-from scipy import random, exp, log, argmax, array, stats
+from scipy import random, exp, log, sqrt, argmax, array, stats
 
 TINY = 1e-6
 
@@ -219,3 +219,40 @@ class RandomBetaBandit(BaseBandit):
         rvs = random.beta(succ + 1, fail + 1)
 
         return argmax(rvs)
+
+
+class UCB1Bandit(BaseBandit):
+    def draw(self):
+        t = 2*log(self.total_draws)
+
+        return argmax([e + sqrt(t/d) if d > 0 else 1 for e, d in zip(self.expected_payouts, self.draws)])
+
+
+class UCBGaussianBandit(BaseBandit):
+    def __init__(self, **kwargs):
+        super(UCBGaussianBandit, self).__init__(**kwargs)
+
+    def initialize(self, n_arms):
+        self.M2 = [0 for _ in range(n_arms)]
+        super(UCBGaussianBandit, self).initialize(n_arms)
+
+    def update(self, selected_arm, payout):
+        delta = payout - self.expected_payouts[selected_arm]
+        super(UCBGaussianBandit, self).update(selected_arm, payout)
+        mean = self.expected_payouts[selected_arm]
+        self.M2[selected_arm] += delta * (payout - mean)
+
+    def draw(self):
+        mu = self.expected_payouts
+        M2 = self.M2
+        counts = self.draws
+
+        return argmax(float('inf') if n < 2 else m + 1.96 * sqrt(s / (n - 1)) for m, s, n in zip(mu, M2, counts))
+
+
+class RandomGaussianBandit(UCBGaussianBandit):
+    def draw(self):
+        mu = array(self.expected_payouts)
+        sd = array([float('inf') if n < 2 else sqrt(s / (n - 1)) for s, n in zip(self.M2, self.draws)])
+
+        return argmax(random.randn(self.n_arms) * sd + mu)
