@@ -5,7 +5,42 @@ TINY = 1e-6
 
 
 class BaseBandit(object):
+    """
+    Baseclass for Bandit Algorithms. This is intended to be inherited by other Bandits to provide core functions.
+
+    The BaseBandit takes care of basic initialization, and update rules. The class also exposes a number of useful
+    properties for tracking metrics useful for monitoring bandit algorithms.
+
+    Properties and Attributes exposed by this baseclass:
+        n_arms - the number of arms available to the bandit
+        draws - the number of draws performed by the bandit for each arm
+        payouts - the total payouts given to the algorithm for each arm
+        success - the total number of successful payouts for each arm
+        expected_payouts - the expected payout for each arm
+        expected_success - the expected success rate of each arm
+        total_draws - the total number of draws performed by the bandit
+        total_payouts - the total payout achieved by the bandit
+        total_success - the total number of successful draws achieved by the bandit
+        metric - the type of performance metric to use when deciding on which arm to draw
+
+    Additionally, the BaseBandit provides a 'hidden' function _metric_fn which exposes the relevent performance
+    metric, as a list, to all subclasses
+    """
     def __init__(self, draws=None, payouts=None, success=None, n_arms=None, metric='payout'):
+        """
+        Must supply either: draws, payouts AND success OR n_arms.
+
+        If draws, payouts, AND success, each must have the same length.
+
+        :param draws: None or a list containing the number of draws for each arm (default = None)
+        :param payouts: None or a list containing the total payouts for each arm (default = None)
+        :param success: None or a list containing the success counts for each arm (default = None)
+        :param n_arms: None or an int of the number of arms of the bandit (default = None)
+        :param metric: Either 'payout', 'success', 'Epayout', 'Esuccess' (default = 'payout')
+                       Epayout, Esuccess stand for expected_payout and expected_success
+
+                       This is the performance metric that will be exposed via BaseBandit._metric_fn
+        """
         if draws is None or payouts is None or success is None:
             if n_arms is None:
                 raise ValueError('Must give either draws, payouts, and success or n_arms')
@@ -22,6 +57,11 @@ class BaseBandit(object):
         self.metric = metric
 
     def initialize(self, n_arms):
+        """
+        Initialize the bandit algorithm with lists for draws, payouts, and success
+
+        :param n_arms: an int of the number of arms of the bandit
+        """
         self.draws = [0]*n_arms
         self.payouts = [0]*n_arms
         self.success = [0]*n_arms
@@ -75,6 +115,13 @@ class BaseBandit(object):
         return [p/d if d > 0 else 0 for p, d in zip(self.payouts, self.draws)]
 
     def update(self, selected_arm, payout):
+        """
+        Update the bandits parameters by incrementing each of:
+            draws[selected_arm], payouts[selected_arm], and success[selected_arm]
+
+        :param selected_arm: an int on interval [0, n_arms)
+        :param payout: the total payout recieved from selected_arm
+        """
         self.draws[selected_arm] += 1
         self.payouts[selected_arm] += payout
         self.success[selected_arm] += 1 if payout > 0 else 0
@@ -84,15 +131,30 @@ class BaseBandit(object):
 
 
 def linear_schedule(t):
-    return t + TINY
+    return 1 / (t + TINY)
 
 
 def logarithmic_schedule(t):
-    return log(t + 1 + TINY)
+    return 1 / log(t + 1 + TINY)
 
 
 class AnnealedBaseBandit(BaseBandit):
+    """
+    A subclass of BaseBandit intended to be inherited by annealing bandit algorithms
+
+    Exposes the property:
+        schedule - the type of annealing schedule for temperature updates
+
+    Exposes the hidden method:
+        _schedule_fn which outputs the current temperature at the current iteration
+    """
     def __init__(self, schedule='logarithmic', **kwargs):
+        """
+        :param schedule: either 'logarithmic' or 'linear' (default = 'logarithmic')
+                         'logarithmic' schedule updates temperature(iter_t) = 1 / log(t + 1 + 1e-6)
+                         'linear' schedule updates temperature(iter_t) = 1 / (t + 1e-6)
+        :param kwargs: Arguments that will be passed to the superclass BaseBandit
+        """
         self.schedule = schedule
         super(AnnealedBaseBandit, self).__init__(**kwargs)
 
@@ -112,17 +174,27 @@ class AnnealedBaseBandit(BaseBandit):
             raise ValueError('Incorrect value for annealing schedule. Got %s. Expected "linear" or "logarithmic"' % new)
 
 
-class GreedyBandit(BaseBandit):
-    def draw(self):
-        return argmax(self.expected_payouts)
-
-
 class EpsilonGreedyBandit(BaseBandit):
+    """
+    The EpsilonGreedyBandit greedily selects the arm with the highest performing metric with probability (1-epsilon)
+    and selects any arm, uniformly at random, with probability epsilon
+    """
     def __init__(self, epsilon=0.1, **kwargs):
+        """
+        :param epsilon: a float on the interval [0, 1] (default = 0.1)
+                        explore arms with probability epsilon, and exploit with probability (1 - epsilon)
+        :param kwargs: Arguments to pass to the BaseBandit superclass
+        """
         self.epsilon = epsilon
         super(EpsilonGreedyBandit, self).__init__(**kwargs)
 
     def draw(self):
+        """
+        Draws the best arm with probability (1 - epsilon)
+        Draws any arm at random with probility epsilon
+
+        :return: The numerical index of the selected arm
+        """
         if random.rand() < self.epsilon:
             return random.choice(self.n_arms)
         else:
@@ -130,12 +202,29 @@ class EpsilonGreedyBandit(BaseBandit):
 
 
 class AnnealedEpsilonGreedyBandit(AnnealedBaseBandit):
+    """
+    An annealed version of the EpsilonGreedyBandit.
+
+    Epsilon decreases over time proportional to the temperature given by the annealing schedule
+
+    This has the effect of pushing the algorithm towards exploitation as time progresses
+    """
     def __init__(self, epsilon=1.0, **kwargs):
+        """
+        :param epsilon: float on the interval [0, 1] (default = 1.0)
+        :param kwargs: Arguments to pass to AnnealedBaseBandit superclass
+        """
         self.epsilon = epsilon
         super(AnnealedEpsilonGreedyBandit, self).__init__(**kwargs)
 
     def draw(self):
-        temp = 1 / self._schedule_fn(self.total_draws)
+        """
+        Draws the best arm with probability (1 - epsilon * temp)
+        Draws any arm with probability epsilon * temp
+
+        :return: The numerical index of the selected arm
+        """
+        temp = self._schedule_fn(self.total_draws)
         if random.rand() < self.epsilon * temp:
             return random.choice(self.n_arms)
         else:
@@ -148,13 +237,37 @@ def softmax(l):
 
 
 class SoftmaxBandit(BaseBandit):
+    """
+    SoftmaxBandit selects arms stochastically by creating a multinomial distribution across arms via a softmax function
+    """
     def draw(self):
+        """
+        Selects arm i with probability distribution given by the softmax:
+            P(arm_i) = exp(metric_i) / Z
+
+        Where Z is the normalizing constant:
+            Z = sum(exp(metric_i) for i in range(n_arms))
+
+        :return: The numerical index of the selected arm
+        """
         return argmax(random.multinomial(1, pvals=softmax(self._metric_fn())))
 
 
 class AnnealedSoftmaxBandit(AnnealedBaseBandit):
+    """
+    Annealed version of the SoftmaxBandit
+    """
     def draw(self):
-        temp = 1 / self._schedule_fn(self.total_draws)
+        """
+        Selects arm i with probability distribution given by the softmax:
+            P(arm_i) = exp(metric_i / temperature) / Z
+
+        Where Z is the normalizing constant:
+            Z = sum(exp(metric_i / temperature) for i in range(n_arms))
+
+        :return: The numerical index of the selected arm
+        """
+        temp = self._schedule_fn(self.total_draws)
         return argmax(random.multinomial(1, pvals=softmax(array(self._metric_fn()) / temp)))
 
 
@@ -185,8 +298,8 @@ class AnnealedDirichletBandit(AnnealedBaseBandit):
         super(AnnealedDirichletBandit, self).__init__(**kwargs)
 
     def draw(self):
-        temp = 1 / self._schedule_fn(self.total_draws)
-        x = array(self._metric_fn()) / temp + 1
+        temp = self._schedule_fn(self.total_draws)
+        x = array(self._metric_fn()) * temp + 1
 
         if self.sample_priors:
             pvals = random.dirichlet(x)
