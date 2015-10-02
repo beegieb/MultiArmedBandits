@@ -440,26 +440,63 @@ class UCB1Bandit(BaseBandit):
         http://homes.di.unimi.it/~cesabian/Pubblicazioni/ml-02.pdf
     """
     def draw(self):
+        """
+        Draws arm based on the highest expected reward with a bonus given for uncertainty.
+
+        Concretely:
+            draws argmax([... expected_payout[i] + sqrt(2*log(T[i]) / draws[i]) ...])
+
+        :return: The numerical index of the selected arm
+        """
         t = 2*log(self.total_draws)
 
         return argmax([e + sqrt(t/d) if d > 0 else float('inf') for e, d in zip(self.expected_payouts, self.draws)])
 
 
 class UCBGaussianBandit(BaseBandit):
-    def __init__(self, **kwargs):
-        super(UCBGaussianBandit, self).__init__(**kwargs)
+    """
+    UCBGaussianBandit is another UCB bandit that models expected payout for each arm as a univariate-gaussian
+    distribution. The bandit selects the arm with the highest 95% confidence bound for expected reward, which is
+    computed in closed form using the approximation:
+        upper_bound[i] = mean[i] + 1.96 * std[i]
+
+    This model uses an online algorithm for computing variance described on Wikipedia:
+        https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Online_algorithm
+    """
 
     def initialize(self, n_arms):
+        """
+        Initialize the bandit algorithm with lists for draws, payouts, success, and online variance
+
+        :param n_arms: an int of the number of arms of the bandit
+        """
         self.M2 = [0 for _ in range(n_arms)]
         super(UCBGaussianBandit, self).initialize(n_arms)
 
     def update(self, selected_arm, payout):
+        """
+        Update the bandits parameters by incrementing each of:
+            draws[selected_arm], payouts[selected_arm], and success[selected_arm]
+
+        Also updates tracking for online variance estimates
+
+        :param selected_arm: an int on interval [0, n_arms)
+        :param payout: the total payout recieved from selected_arm
+        """
         delta = payout - self.expected_payouts[selected_arm]
         super(UCBGaussianBandit, self).update(selected_arm, payout)
         mean = self.expected_payouts[selected_arm]
         self.M2[selected_arm] += delta * (payout - mean)
 
     def draw(self):
+        """
+        If an arm has been drawn less than 2 times, select that arm
+
+        Otherwise return:
+            argmax([ ... expected_reward[i] + 1.96 * std[i] ...])
+
+        :return: The numerical index of the selected arm
+        """
         mu = self.expected_payouts
         M2 = self.M2
         counts = self.draws
@@ -468,7 +505,23 @@ class UCBGaussianBandit(BaseBandit):
 
 
 class RandomGaussianBandit(UCBGaussianBandit):
+    """
+    Similar model to the UCBGaussianBandit, the difference being the model randomly samples the estimates for
+    expected reward from the learned gaussians. This adds randomness the draws allowing the algorithm to better handle
+    settings with delayed feedback.
+
+    Some imperical tests also provide evidence that this algorithm outperforms the UCBGaussianBandit in settings with
+    instantanious feedback, but this is not a proven fact. Use that observation with caution.
+    """
     def draw(self):
+        """
+        If an arm has been drawn less than 2 times, select that arm
+
+        Otherwise return:
+            argmax([ ... random.normal(mean=expected_return[i], sd=std[i]) ...])
+
+        :return: The numerical index of the selected arm
+        """
         mu = array(self.expected_payouts)
         sd = array([float('inf') if n < 2 else sqrt(s / (n - 1)) for s, n in zip(self.M2, self.draws)])
 
