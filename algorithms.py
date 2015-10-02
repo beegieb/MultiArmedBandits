@@ -238,7 +238,7 @@ def softmax(l):
 
 class SoftmaxBandit(BaseBandit):
     """
-    SoftmaxBandit selects arms stochastically by creating a multinomial distribution across arms via a softmax function
+    SoftmaxBandit selects arms stochastically by creating a categorical distribution across arms via a softmax function
     """
     def draw(self):
         """
@@ -272,12 +272,41 @@ class AnnealedSoftmaxBandit(AnnealedBaseBandit):
 
 
 class DirichletBandit(BaseBandit):
+    """
+    DirichletBandit selects arms stochastichally from a categorical distribution sampled from a Dirichlet distribution
+
+    This bandit samples priors for the categorical distribution, and then randomly selects the arm from the given
+    categorical distribution
+    """
     def __init__(self, random_sample=True, sample_priors=True, **kwargs):
+        """
+        :param random_sample: a boolean (default True)
+                              if True, the selected arm is drawn at random from a categorical distribution
+                              if False, the argmax from categorical parameters is returned as the selected arm
+        :param sample_priors: a boolean (default True)
+                              if True, parameter for the categorical are sampled at random from a Dirichlet distribution
+                              if False, parameters for the categorical are given by the mean of a Dirichlet distribution
+        :param kwargs: Arguments to pass to BaseBandit superclass
+        """
         self.random_sample = random_sample
         self.sample_priors = sample_priors
         super(DirichletBandit, self).__init__(**kwargs)
 
     def draw(self):
+        """
+        if sample_priors = True and random_sample = True:
+           draw returns a random draw of a categorical distribution with parameters drawn from a Dirichlet distribution
+           the hyperparameters on the Dirichlet are given by the bandit's metric with laplacian smoothing
+        if sample_priors = False and random_sample = True:
+            draw returns a random draw of a categorical distribution with parameters given by the bandit's metric
+        if sample_priors = True and random_sample = False:
+            draw returns argmax(random.dirichlet((x_0 + 1, ... , x_n_arms + 1))) where x_i is the ith value returned by
+            the bandit's metric.
+        if sample_priors = False and random_sample = False:
+            become a purely greedy bandit with the selected arm given by argmax(metric)
+
+        :return: The numerical index of the selected arm
+        """
         x = array(self._metric_fn()) + 1
 
         if self.sample_priors:
@@ -292,12 +321,40 @@ class DirichletBandit(BaseBandit):
 
 
 class AnnealedDirichletBandit(AnnealedBaseBandit):
+    """
+    Nearly identical to the DirichletBandit, the only difference is annealing is applied when samping parameters from
+    the Dirichlet Distribution. Annealing has the effect of reducing the variance in samples pulled from the Dirichlet
+    distribution as the temperature decreases.
+    """
     def __init__(self, random_sample=True, sample_priors=True, **kwargs):
+        """
+        :param random_sample: a boolean (default True)
+                              if True, the selected arm is drawn at random from a categorical distribution
+                              if False, the argmax from categorical parameters is returned as the selected arm
+        :param sample_priors: a boolean (default True)
+                              if True, parameter for the categorical are sampled at random from a Dirichlet distribution
+                              if False, parameters for the categorical are given by the mean of a Dirichlet distribution
+        :param kwargs: Arguments to pass to AnnealedBaseBandit superclass
+        """
         self.random_sample = random_sample
         self.sample_priors = sample_priors
         super(AnnealedDirichletBandit, self).__init__(**kwargs)
 
     def draw(self):
+        """
+        if sample_priors = True and random_sample = True:
+           draw returns a random draw of a categorical distribution with parameters drawn from a Dirichlet distribution
+           the hyperparameters on the Dirichlet are given by the bandit's metric with laplacian smoothing
+        if sample_priors = False and random_sample = True:
+            draw returns a random draw of a categorical distribution with parameters given by the bandit's metric
+        if sample_priors = True and random_sample = False:
+            draw returns argmax(random.dirichlet((x_0 + 1, ... , x_n_arms + 1))) where x_i is the ith value returned by
+            the bandit's metric.
+        if sample_priors = False and random_sample = False:
+            become a purely greedy bandit with the selected arm given by argmax(metric)
+
+        :return: The numerical index of the selected arm
+        """
         temp = self._schedule_fn(self.total_draws)
         x = array(self._metric_fn()) * temp + 1
 
@@ -313,11 +370,35 @@ class AnnealedDirichletBandit(AnnealedBaseBandit):
 
 
 class UCBBetaBandit(BaseBandit):
+    """
+    An Upper Confidence Bound bandit that assumes each arm's chance of success is given by a Bernoulli distribution,
+    and the payout of each arm is identical
+
+    The bandit assumes the Bernoulli parameters are generated from a Beta prior whose uncertainty can be quantified
+
+    Arms are selected deterministically by selecting the arm with the highest estimated upper confidence bound on
+    the beta priors
+    """
     def __init__(self, conf=0.95, **kwargs):
+        """
+        :param conf: The 2-sided confidence interval to use when calculating the Upper Confidence Bound (default 0.95)
+        :param kwargs: Arguments to pass to BaseBandit superclass
+
+        Note: metric is ignored in this bandit algorithm. The beta distribution parameters are given by success and
+        failure rates of each individual arm
+        """
         self.conf = conf
         super(UCBBetaBandit, self).__init__(**kwargs)
 
     def draw(self):
+        """
+        Selects the arm to draw based on the upper bounds of each arm's confidence interval
+
+        Specifically returns: argmax([... beta(succ_i + 1, fail_i + 1).interval(conf) ... ])
+        where succ_i and fail_i are the total number of successful and failed pulls for the ith arm
+
+        :return: The numerical index of the selected arm
+        """
         succ = array(self.success)
         fail = array(self.draws) - succ
         beta = stats.beta(succ + 1, fail + 1)
@@ -326,7 +407,24 @@ class UCBBetaBandit(BaseBandit):
 
 
 class RandomBetaBandit(BaseBandit):
+    """
+    The RandomBetaBandit has similar assumptions to the UCBBetaBandit. But instead of estimating the probability of
+    success for each arm by looking at the upper confidence bound, this bandit instead samples the probability of
+    success for each arm from a beta distribution
+
+    This has the effect of introducing randomness into the process of selecting arms, while accounting for uncertainty
+    in the success rates of individual arms. There is also the added bonus that sampling is computationally faster
+    than computing upper confidence bounds on a Beta distribution
+    """
     def draw(self):
+        """
+        Selects the arm with the largest sampled probability of success
+
+        Specifically returns: argmax([... random.beta(succ_i + 1, fail_i + 1) ... ])
+        where succ_i and fail_i are the total number of successful and failed pulls for the ith arm
+
+        :return: The numerical index of the selected arm
+        """
         succ = array(self.success)
         fail = array(self.draws) - succ
         rvs = random.beta(succ + 1, fail + 1)
@@ -335,10 +433,16 @@ class RandomBetaBandit(BaseBandit):
 
 
 class UCB1Bandit(BaseBandit):
+    """
+    Implements the UCB1 algorithm, one of the simplest in the UCB family of bandits.
+
+    The implementation details can be found in the following publication:
+        http://homes.di.unimi.it/~cesabian/Pubblicazioni/ml-02.pdf
+    """
     def draw(self):
         t = 2*log(self.total_draws)
 
-        return argmax([e + sqrt(t/d) if d > 0 else 1 for e, d in zip(self.expected_payouts, self.draws)])
+        return argmax([e + sqrt(t/d) if d > 0 else float('inf') for e, d in zip(self.expected_payouts, self.draws)])
 
 
 class UCBGaussianBandit(BaseBandit):
