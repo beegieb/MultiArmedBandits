@@ -450,7 +450,7 @@ class UCB1Bandit(BaseBandit):
         """
         t = 2*log(self.total_draws)
 
-        return argmax([e + sqrt(t/d) if d > 0 else float('inf') for e, d in zip(self.expected_payouts, self.draws)])
+        return argmax([float('inf') if d == 0 else e + sqrt(t/d) for e, d in zip(self.expected_payouts, self.draws)])
 
 
 class UCBGaussianBandit(BaseBandit):
