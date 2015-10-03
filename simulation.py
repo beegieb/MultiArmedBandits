@@ -1,5 +1,6 @@
 from scipy import random, array, argmax, cumsum, log
 from datetime import datetime
+from collections import deque
 
 
 class BernoulliArm(object):
@@ -102,14 +103,16 @@ class CategoricalArm(object):
 
 
 class BanditSimulation(object):
-    def __init__(self, arms, n_rounds=500, n_sim=500, verbose=False, outfile=None):
+    def __init__(self, arms, n_rounds=500, n_sim=500, delay=0, verbose=False, outfile=None):
         self.arms = arms
         self.n_rounds = n_rounds
         self.n_sim = n_sim
+        self.delay = delay
         self.outfile = outfile
         self.verbose = verbose
         self._round_counter = 0
         self._simulation_counter = 0
+        self._delayed_updates = deque()
 
     @property
     def n_arms(self):
@@ -118,7 +121,13 @@ class BanditSimulation(object):
     def _run_one_round(self, bandit_alg):
         arm = bandit_alg.draw()
         payout = self.arms[arm].draw()
-        bandit_alg.update(selected_arm=arm, payout=payout)
+
+        if self.delay == 0:
+            bandit_alg.update(selected_arm=arm, payout=payout)
+        else:
+            while self.delay >= len(self._delayed_updates):
+                bandit_alg.update(**self._delayed_updates.popleft())
+            self._delayed_updates.append({'selected_arm': arm, 'payout': payout})
 
         self._round_counter += 1
 
@@ -142,7 +151,7 @@ class BanditSimulation(object):
         results = [self._run_one_round(bandit_alg) for _ in range(self.n_rounds)]
         end_time = datetime.now()
 
-        return results, best_arm, (end_time - start_time).seconds
+        return results, best_arm, (end_time - start_time).total_seconds()
 
     def simulate(self, bandit_alg):
         self.results_ = [self._run_one_sim(bandit_alg) for _ in range(self.n_sim)]
