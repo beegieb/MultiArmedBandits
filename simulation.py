@@ -125,7 +125,7 @@ class BanditSimulation(object):
         if self.delay == 0:
             bandit_alg.update(selected_arm=arm, payout=payout)
         else:
-            while self.delay >= len(self._delayed_updates):
+            while self.delay < len(self._delayed_updates):
                 bandit_alg.update(**self._delayed_updates.popleft())
             self._delayed_updates.append({'selected_arm': arm, 'payout': payout})
 
