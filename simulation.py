@@ -3,7 +3,14 @@ from datetime import datetime
 
 
 class BernoulliArm(object):
+    """
+    A BernoulliArm simulates an arm with a single payout with a fixed payout probability
+    """
     def __init__(self, p=0.5, payout=1.):
+        """
+        :param p: The probability of outputting a payout (default: 0.5)
+        :param payout: The numerical value of the payout (default: 1.0)
+        """
         self._p = None
         self.p = p
         self.payout = payout
@@ -24,17 +31,32 @@ class BernoulliArm(object):
         return self.p * self.payout
 
     def draw(self):
+        """
+        :return: payout with probability p, 0 with probability (1 - p)
+        """
         return random.binomial(1, p=self.p) * self.payout
 
 
-class MultinomialArm(object):
+class CategoricalArm(object):
+    """
+    CategoricalArm simulates an arm that has multiple different payout values each with probability of success
+    given by a categorical distribution
+    """
     def __init__(self, pvals=(0.5, 0.5), payouts=(0., 1.)):
+        """
+        :param pvals: a list-like of probabilities corresponding to each possible payout (default: (0.5, 0.5))
+                      The condition must hold: sum(pvals) <= 1
+                      if sum(pvals) < 1, the final element in pvals is renormalized to 1 - sum(pvals[:-1]) when
+                      making a draw
+        :param payouts: a list-like of payout values (default: (0., 1.))
+                        must be same length as pvals
+        """
         if len(pvals) != len(payouts):
             raise ValueError("pvals and payouts must have same length")
 
         self._pvals = None
+        self._payouts = payouts
         self.pvals = pvals
-        self.payouts = payouts
 
     @property
     def pvals(self):
@@ -48,13 +70,34 @@ class MultinomialArm(object):
         if sum(new_pvals) > 1:
             raise ValueError("All pvals must sum to at-most 1")
 
+        if len(new_pvals) != len(self.payouts):
+            raise ValueError("pvals must have the same length as payouts, got %i expected %i"
+                             % len(new_pvals), len(self.payouts))
+
         self._pvals = array(new_pvals)
+
+    @property
+    def payouts(self):
+        return self._payouts
+
+    @payouts.setter
+    def payouts(self, new_payouts):
+        if len(new_payouts) != len(self.pvals):
+            raise ValueError("payouts must have the same length as pvals, got %i expected %i"
+                             % len(new_payouts), len(self.pvals))
+
+        self._payouts = new_payouts
 
     @property
     def expected_reward(self):
         return self.pvals.dot(self.payouts)
 
     def draw(self):
+        """
+        Sample from the categorical distribution, and payout corresponding to the selected index
+
+        :return: payouts[i], where i is sampled from the categorical distribution given by pvals
+        """
         return random.multinomial(1, pvals=self.pvals).dot(self.payouts)
 
 
