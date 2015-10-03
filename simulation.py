@@ -101,7 +101,7 @@ class CategoricalArm(object):
         return random.multinomial(1, pvals=self.pvals).dot(self.payouts)
 
 
-class BanditMonteCarloSimulation(object):
+class BanditSimulation(object):
     def __init__(self, arms, n_rounds=500, n_sim=500, verbose=False, outfile=None):
         self.arms = arms
         self.n_rounds = n_rounds
