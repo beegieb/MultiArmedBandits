@@ -1,6 +1,8 @@
 from scipy import random, array, argmax, cumsum, log
 from datetime import datetime
 from collections import deque
+from itertools import chain
+import pandas as pd
 
 
 class BernoulliArm(object):
@@ -119,6 +121,7 @@ class BanditSimulation(object):
         return len(self.arms)
 
     def _run_one_round(self, bandit_alg):
+        start_time = datetime.now()
         arm = bandit_alg.draw()
         payout = self.arms[arm].draw()
 
@@ -133,8 +136,8 @@ class BanditSimulation(object):
 
         if self.verbose:
             print 'Round %i - Arm %i - Payout %f' % (self._round_counter, arm, payout)
-
-        return arm, payout
+        end_time = datetime.now()
+        return arm, payout, (end_time - start_time).total_seconds()
 
     def _run_one_sim(self, bandit_alg):
         self._round_counter = 0
@@ -147,14 +150,19 @@ class BanditSimulation(object):
         if self.verbose:
             print 'Starting Simulation %i - Best Arm is %i' % (self._simulation_counter, best_arm)
 
-        start_time = datetime.now()
         results = [self._run_one_round(bandit_alg) for _ in range(self.n_rounds)]
-        end_time = datetime.now()
 
-        return results, best_arm, (end_time - start_time).total_seconds()
+        return results, best_arm
 
     def simulate(self, bandit_alg):
-        self.results_ = [self._run_one_sim(bandit_alg) for _ in range(self.n_sim)]
+        results = [self._run_one_sim(bandit_alg) for _ in range(self.n_sim)]
+        arm_runtime = pd.DataFrame({'simulation': i, 'best_arm': a} for i, (_, a) in enumerate(results))
+        run_results = pd.DataFrame([{'selected_arm': r[0], 'payout': r[1], 'round': i % self.n_rounds,
+                                     'runtime': r[2], 'simulation': i / self.n_rounds}
+                                    for i, r in enumerate(chain(*(r[0] for r in results)))])
+        self.results_ = run_results.join(arm_runtime, on='simulation',
+                                         how='inner', lsuffix='_l').drop('simulation_l', axis=1)
+
 
         if self.outfile is not None:
             self.save_results(outfile=self.outfile)
@@ -168,37 +176,34 @@ class BanditSimulation(object):
         if not hasattr(self, 'results_'):
             raise RuntimeError('Simulation has not been run yet. Use the simulate method prior to calling save_results')
 
-        runs = array([run for run, _, _ in self.results_])
-        best_arms = [best_arm for _, best_arm, _ in self.results_]
-        runtimes = array([runtime for _, _, runtime in self.results_])
+        self.results_['is_best'] = self.results_.selected_arm == self.results_.best_arm
+        grouper_sim = self.results_.groupby('simulation')
+        grouper_round = self.results_.groupby('round')
 
-        cumulative_rewards = cumsum(runs[:, :, 1], 1)
-        best_arm_accuracy = array([r[:, 0] == a for r, a in zip(runs, best_arms)])
-
-        return {'Runtime': {'Avg': runtimes.mean(), 'Std': runtimes.std(), 'Total': runtimes.sum()},
-                'Accuracy': {'Avg': best_arm_accuracy.mean(0)},
-                'CumulativeRewards': {'Avg': cumulative_rewards.mean(0), 'Std': cumulative_rewards.std(0)}}
+        runtime = grouper_sim.runtime.sum()
+        cumulative_rewards = pd.DataFrame({'cumulative_payout': grouper_sim.payout.cumsum(),
+                                           'round': range(self.n_rounds) * self.n_sim}).groupby('round')
+        return {'Runtime': {'Avg': runtime.mean(), 'Std': runtime.std(), 'Total': runtime.sum()},
+                'Accuracy': {'Avg': grouper_round.is_best.mean()},
+                'CumulativeRewards': {'Avg': cumulative_rewards.mean().cumulative_payout,
+                                      'Std': cumulative_rewards.std().cumulative_payout}}
 
     def print_summary(self):
         summary = self.summary()
         n = len(summary['Accuracy']['Avg'])
         discount_weights = log(array(range(n)) + 1) + 1
         discount_weights /= sum(discount_weights)
-        print 'Final Average Accuracy: %f' % summary['Accuracy']['Avg'][-1]
+        print 'Final Average Accuracy: %f' % summary['Accuracy']['Avg'].ix[self.n_rounds - 1]
         print 'Discounted Average Accuracy: %f' % summary['Accuracy']['Avg'].dot(discount_weights)
-        print 'Average Total Reward: %f - Std: %f' % (summary['CumulativeRewards']['Avg'][-1],
-                                                      summary['CumulativeRewards']['Std'][-1])
+        print 'Average Total Reward: %f - Std: %f' % (summary['CumulativeRewards']['Avg'].ix[self.n_rounds - 1],
+                                                      summary['CumulativeRewards']['Std'].ix[self.n_rounds - 1])
         print 'Average Runtime: %f - Total Runtime: %f' % (summary['Runtime']['Avg'], summary['Runtime']['Total'])
 
-    def save_results(self, outfile):
+    def save_results(self, outfile, float_format='%.6f'):
         if not hasattr(self, 'results_'):
             raise RuntimeError('Simulation has not been run yet. Use the simulate method prior to calling save_results')
 
         if self.verbose:
             print 'Saving simulation results to %s' % outfile
 
-        with open(outfile, 'w') as output:
-            output.write('Simulation_ID,Round,Arm,Payout,Best_Arm\n')
-            for i, (sim_round, best_arm, runtime) in enumerate(self.results_):
-                for j, (arm, payout) in enumerate(sim_round):
-                    output.write('%i,%i,%i,%f,%i\n' % (i+1, j+1, arm, payout, best_arm))
+        self.results_.to_csv(outfile, index=False, float_format=float_format)
