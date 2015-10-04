@@ -1,8 +1,9 @@
-from scipy import random, array, argmax, cumsum, log
+from scipy import random, array, argmax, log
 from datetime import datetime
 from collections import deque
 from itertools import chain
 import pandas as pd
+import ggplot as gg
 
 
 class BernoulliArm(object):
@@ -181,12 +182,12 @@ class BanditSimulation(object):
         grouper_round = self.results_.groupby('round')
 
         runtime = grouper_sim.runtime.sum()
-        cumulative_rewards = pd.DataFrame({'cumulative_payout': grouper_sim.payout.cumsum(),
+        cumulative_payout = pd.DataFrame({'cumulative_payout': grouper_sim.payout.cumsum(),
                                            'round': range(self.n_rounds) * self.n_sim}).groupby('round')
         return {'Runtime': {'Avg': runtime.mean(), 'Std': runtime.std(), 'Total': runtime.sum()},
                 'Accuracy': {'Avg': grouper_round.is_best.mean()},
-                'CumulativeRewards': {'Avg': cumulative_rewards.mean().cumulative_payout,
-                                      'Std': cumulative_rewards.std().cumulative_payout}}
+                'CumulativePayout': {'Avg': cumulative_payout.mean().cumulative_payout,
+                                     'Std': cumulative_payout.std().cumulative_payout}}
 
     def print_summary(self):
         summary = self.summary()
@@ -195,8 +196,8 @@ class BanditSimulation(object):
         discount_weights /= sum(discount_weights)
         print 'Final Average Accuracy: %f' % summary['Accuracy']['Avg'].ix[self.n_rounds - 1]
         print 'Discounted Average Accuracy: %f' % summary['Accuracy']['Avg'].dot(discount_weights)
-        print 'Average Total Reward: %f - Std: %f' % (summary['CumulativeRewards']['Avg'].ix[self.n_rounds - 1],
-                                                      summary['CumulativeRewards']['Std'].ix[self.n_rounds - 1])
+        print 'Average Total Reward: %f - Std: %f' % (summary['CumulativePayout']['Avg'].ix[self.n_rounds - 1],
+                                                      summary['CumulativePayout']['Std'].ix[self.n_rounds - 1])
         print 'Average Runtime: %f - Total Runtime: %f' % (summary['Runtime']['Avg'], summary['Runtime']['Total'])
 
     def save_results(self, outfile, float_format='%.6f'):
@@ -207,3 +208,68 @@ class BanditSimulation(object):
             print 'Saving simulation results to %s' % outfile
 
         self.results_.to_csv(outfile, index=False, float_format=float_format)
+
+    def _plot_cumulative_payouts(self, include_ci=True, summary=None):
+        if summary is None:
+            summary = self.summary()
+
+        df = pd.DataFrame({'AverageCumulativePayout': summary['CumulativePayout']['Avg'],
+                           'Std': summary['CumulativePayout']['Std'],
+                           'Round': range(self.n_rounds)})
+        if include_ci:
+            df['ymin'] = df.AverageCumulativePayout - 1.96 * df.Std
+            df['ymax'] = df.AverageCumulativePayout + 1.96 * df.Std
+            plt = gg.ggplot(gg.aes(x='Round', y='AverageCumulativePayout', ymin='ymin', ymax='ymax'), data=df) + \
+                  gg.geom_area(alpha=0.5)
+        else:
+            plt = gg.ggplot(gg.aes(x='Round', y='AverageCumulativePayout'), data=df)
+
+        return plt + gg.geom_line()
+
+    def _plot_avg_accuracy(self, include_ci=True, summary=None):
+        if summary is None:
+            summary = self.summary()
+
+        df = pd.DataFrame({'AverageAccuracy': summary['Accuracy']['Avg'], 'Round': range(self.n_rounds)})
+
+        if include_ci:
+            from scipy import stats
+            succ = df.AverageAccuracy * self.n_sim
+            fail = self.n_sim - succ
+            interval = stats.beta(succ + 1, fail + 1).interval(0.95)
+
+            df['ymin'] = interval[0]
+            df['ymax'] = interval[1]
+            plt = gg.ggplot(gg.aes(x='Round', y='AverageAccuracy', ymin='ymin', ymax='ymax'), data=df) + \
+                gg.geom_area(alpha=0.5)
+        else:
+            plt = gg.ggplot(gg.aes(x='Round', y='AverageAccuracy'), data=df)
+
+        return plt + gg.geom_line()
+
+    def plot(self, what='cumulative_payouts', include_ci=True):
+        if what == 'cumulative_payouts':
+            plt = self._plot_cumulative_payouts(include_ci=include_ci)
+        elif what == 'avg_accuracy':
+            plt = self._plot_avg_accuracy(include_ci=include_ci)
+        elif what == 'all':
+            summary = self.summary()
+            p1 = self._plot_cumulative_payouts(include_ci=include_ci, summary=summary)
+            p2 = self._plot_avg_accuracy(include_ci=include_ci, summary=summary)
+            d1 = p1.data
+            d2 = p2.data
+            d1['Outcome'] = d1['AverageCumulativePayout']
+            d2['Outcome'] = d2['AverageAccuracy']
+            d1['Plot'] = 'Cumulative Payouts'
+            d2['Plot'] = 'Average Accuracy'
+            df = d1.append(d2, ignore_index=True)
+
+            if include_ci:
+                plt = gg.ggplot(gg.aes(x='Round', y='Outcome', ymin='ymin', ymax='ymax'), data=df) + \
+                    gg.geom_area(alpha=0.5)
+            else:
+                plt = gg.ggplot(gg.aes(x='Round', y='Outcome'), data=df)
+        else:
+            raise ValueError('%s is not a valid option' % what)
+
+        return plt + gg.geom_line() + gg.facet_grid('Plot', scales='free')
