@@ -19,6 +19,9 @@ class BernoulliArm(object):
         self.p = p
         self.payout = payout
 
+    def __repr__(self):
+        return "BernoulliArm(p=%s, payout=%s)" % (self.p, self.payout)
+
     @property
     def p(self):
         return self._p
@@ -61,6 +64,9 @@ class CategoricalArm(object):
         self._pvals = None
         self._payouts = payouts
         self.pvals = pvals
+
+    def __repr__(self):
+        return "CategoricalArm(pvals=%s, payouts=%s)" % (self.pvals, self.payouts)
 
     @property
     def pvals(self):
@@ -116,6 +122,10 @@ class BanditSimulation(object):
         self._round_counter = 0
         self._simulation_counter = 0
         self._delayed_updates = deque()
+
+    def __repr__(self):
+        return "BanditSimulation(arms=%s arms, n_rounds=%s, n_sim=%s, delay=%s, verbose=%s, outfile=%s)" % (
+            len(self.arms), self.n_rounds, self.n_sim, self.delay, self.verbose, self.outfile)
 
     @property
     def n_arms(self):

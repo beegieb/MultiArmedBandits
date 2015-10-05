@@ -56,6 +56,9 @@ class BaseBandit(object):
 
         self.metric = metric
 
+    def __repr__(self):
+        return "%s(n_arms=%s, metric=%s)" % (self.__class__.__name__, self.n_arms, self.metric)
+
     def initialize(self, n_arms):
         """
         Initialize the bandit algorithm with lists for draws, payouts, and success
@@ -157,6 +160,10 @@ class AnnealedBaseBandit(BaseBandit):
         """
         self.schedule = schedule
         super(AnnealedBaseBandit, self).__init__(**kwargs)
+
+    def __repr__(self):
+        return "%s(schedule=%s, n_arms=%s, metric=%s)" % (self.__class__.__name__, self.schedule,
+                                                          self.n_arms, self.metric)
 
     @property
     def schedule(self):
