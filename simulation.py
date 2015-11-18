@@ -3,7 +3,6 @@ from datetime import datetime
 from collections import deque
 from itertools import chain
 import pandas as pd
-import ggplot as gg
 
 
 class BernoulliArm(object):
@@ -220,6 +219,7 @@ class BanditSimulation(object):
         self.results_.to_csv(outfile, index=False, float_format=float_format)
 
     def _plot_cumulative_payouts(self, include_ci=True, summary=None):
+        import ggplot as gg
         if summary is None:
             summary = self.summary()
 
@@ -237,6 +237,7 @@ class BanditSimulation(object):
         return plt + gg.geom_line()
 
     def _plot_avg_accuracy(self, include_ci=True, summary=None):
+        import ggplot as gg
         if summary is None:
             summary = self.summary()
 
@@ -258,6 +259,8 @@ class BanditSimulation(object):
         return plt + gg.geom_line()
 
     def plot(self, what='cumulative_payouts', include_ci=True):
+        import ggplot as gg #This is hacky ... need to DRY out the imports
+
         if what == 'cumulative_payouts':
             plt = self._plot_cumulative_payouts(include_ci=include_ci)
         elif what == 'avg_accuracy':
@@ -279,7 +282,9 @@ class BanditSimulation(object):
                     gg.geom_area(alpha=0.5)
             else:
                 plt = gg.ggplot(gg.aes(x='Round', y='Outcome'), data=df)
+
+            plt += gg.facet_grid('Plot', scales='free')
         else:
             raise ValueError('%s is not a valid option' % what)
 
-        return plt + gg.geom_line() + gg.facet_grid('Plot', scales='free')
+        return plt + gg.geom_line()
