@@ -32,7 +32,7 @@ from algorithms import RandomBetaBandit
 # Simulate 30 bernoulli arms
 arms = [BernoulliArm(p=p) for p in np.linspace(0.1, 0.9, 30)]
 
-# Initialize the bandit algorithm, we'll use the RandomBetaBandit (also known as a Baysean Bandit)
+# Initialize the bandit algorithm, we'll use the RandomBetaBandit (also known as a Bayesian Bandit)
 bandit = RandomBetaBandit(n_arms=30)
 
 # Initialize the simulator
