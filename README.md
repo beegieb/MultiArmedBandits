@@ -23,7 +23,7 @@ wheel==0.24.0
 ```
 
 Running a simulation:
-```
+```{python}
 import numpy as np
 
 from simulation import BernoulliArm, BanditSimulation
